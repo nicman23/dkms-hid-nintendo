@@ -21,6 +21,7 @@
  * so little to no user calibration should be required.
  *
  */
+#define CONFIG_NINTENDO_FF 1
 
 #include "hid-ids.h"
 #include <linux/delay.h>
