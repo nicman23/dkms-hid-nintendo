@@ -21,7 +21,6 @@
  * so little to no user calibration should be required.
  *
  */
-#define CONFIG_NINTENDO_FF 1
 
 #include "hid-ids.h"
 #include <linux/delay.h>
@@ -820,7 +819,7 @@ static void joycon_parse_report(struct joycon_ctlr *ctlr,
 	unsigned long msecs = jiffies_to_msecs(jiffies);
 
 	spin_lock_irqsave(&ctlr->lock, flags);
-	if (IS_ENABLED(CONFIG_NINTENDO_FF) && rep->vibrator_report &&
+	if (rep->vibrator_report &&
 	    (msecs - ctlr->rumble_msecs) >= JC_RUMBLE_PERIOD_MS)
 		queue_work(ctlr->rumble_queue, &ctlr->rumble_worker);
 
@@ -1038,7 +1037,6 @@ static void joycon_rumble_worker(struct work_struct *work)
 	}
 }
 
-#if IS_ENABLED(CONFIG_NINTENDO_FF)
 static struct joycon_rumble_freq_data joycon_find_rumble_freq(u16 freq)
 {
 	const size_t length = ARRAY_SIZE(joycon_rumble_frequencies);
@@ -1165,7 +1163,6 @@ static int joycon_play_effect(struct input_dev *dev, void *data,
 				 effect->u.rumble.strong_magnitude,
 				 true);
 }
-#endif /* IS_ENABLED(CONFIG_NINTENDO_FF) */
 
 static const unsigned int joycon_button_inputs_l[] = {
 	BTN_SELECT, BTN_Z, BTN_THUMBL,
@@ -1282,7 +1279,6 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 		input_set_capability(ctlr->input, EV_KEY, BTN_TL2);
 	}
 
-#if IS_ENABLED(CONFIG_NINTENDO_FF)
 	/* set up rumble */
 	input_set_capability(ctlr->input, EV_FF, FF_RUMBLE);
 	input_ff_create_memless(ctlr->input, NULL, joycon_play_effect);
@@ -1293,7 +1289,6 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 	joycon_clamp_rumble_freqs(ctlr);
 	joycon_set_rumble(ctlr, 0, 0, false);
 	ctlr->rumble_msecs = jiffies_to_msecs(jiffies);
-#endif
 
 	ret = input_register_device(ctlr->input);
 	if (ret)
