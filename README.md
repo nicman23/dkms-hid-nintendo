@@ -8,7 +8,7 @@ A Nintendo HID kernel module.
 Install it from source with:
 
 ```
-git clone https://github.com/joaorb64/dkms-hid-nintendo
+git clone https://github.com/nicman23/dkms-hid-nintendo
 cd dkms-hid-nintendo
 
 sudo dkms add .
