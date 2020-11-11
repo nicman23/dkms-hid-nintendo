@@ -1513,6 +1513,15 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 	int ret;
 	int i;
 
+        /*Some 3rd party Switch Pro controllers report Product ID 0x2006
+          instead of 0x2009.
+          Check reported controller type and force Product ID to PROCON.
+        */
+        if(ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO &&
+           ctlr->hdev->product != USB_DEVICE_ID_NINTENDO_PROCON){
+           ctlr->hdev->product = USB_DEVICE_ID_NINTENDO_PROCON;
+        }
+
 	hdev = ctlr->hdev;
 
 	switch (hdev->product) {
