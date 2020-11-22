@@ -753,7 +753,14 @@ static int joycon_request_calibration(struct joycon_ctlr *ctlr)
 					    &ctlr->left_stick_cal_x,
 					    &ctlr->left_stick_cal_y,
 					    true);
-	if (ret) {
+
+	/* check wether read succeeded and perform plausibility check for retrieved values */
+	if (ret ||
+		ctlr->left_stick_cal_x.min >= ctlr->left_stick_cal_x.center ||
+		ctlr->left_stick_cal_x.center >= ctlr->left_stick_cal_x.max ||
+		ctlr->left_stick_cal_y.min >= ctlr->left_stick_cal_y.center ||
+		ctlr->left_stick_cal_y.center >= ctlr->left_stick_cal_y.max
+	) {
 		hid_warn(ctlr->hdev,
 			 "Failed to read left stick cal, using dflts; e=%d\n",
 			 ret);
@@ -772,7 +779,14 @@ static int joycon_request_calibration(struct joycon_ctlr *ctlr)
 					    &ctlr->right_stick_cal_x,
 					    &ctlr->right_stick_cal_y,
 					    false);
-	if (ret) {
+	
+	/* check wether read succeeded and perform plausibility check for retrieved values */
+	if (ret ||
+		ctlr->right_stick_cal_x.min >= ctlr->right_stick_cal_x.center ||
+		ctlr->right_stick_cal_x.center >= ctlr->right_stick_cal_x.max ||
+		ctlr->right_stick_cal_y.min >= ctlr->right_stick_cal_y.center ||
+		ctlr->right_stick_cal_y.center >= ctlr->right_stick_cal_y.max
+	) {
 		hid_warn(ctlr->hdev,
 			 "Failed to read right stick cal, using dflts; e=%d\n",
 			 ret);
