@@ -1355,7 +1355,7 @@ static void joycon_parse_report(struct joycon_ctlr *ctlr,
 		wake_up(&ctlr->wait);
 	}
 
-	/* parse IMU data if the controller has gyron and the data is present */
+	/* parse IMU data if the controller has gyro and the data is present */
 	if (jc_type_has_gyro(ctlr) && rep->id == JC_INPUT_IMU_DATA)
 		joycon_parse_imu_report(ctlr, rep);
 }
