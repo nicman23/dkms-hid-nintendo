@@ -304,6 +304,7 @@ enum joycon_ctlr_type {
 	JOYCON_CTLR_TYPE_JCL = 0x01,
 	JOYCON_CTLR_TYPE_JCR = 0x02,
 	JOYCON_CTLR_TYPE_PRO = 0x03,
+	JOYCON_CTLR_TYPE_SNES = 0x0b,
 };
 
 struct joycon_stick_cal {
@@ -478,11 +479,30 @@ struct joycon_ctlr {
 /* Does this controller have inputs associated with left joycon? */
 #define jc_type_has_left(ctlr) \
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCL || \
+     ctlr->ctlr_type == JOYCON_CTLR_TYPE_SNES || \
 	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
 
 /* Does this controller have inputs associated with right joycon? */
 #define jc_type_has_right(ctlr) \
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
+     ctlr->ctlr_type == JOYCON_CTLR_TYPE_SNES || \
+	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
+
+/* Does this controller have a home button? */
+#define jc_type_has_home(ctlr) \
+	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
+	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
+
+/* Does this controller have a home button? */
+#define jc_type_has_rumble(ctlr) \
+	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
+     ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCL || \
+	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
+
+/* Does this controller have gyro? */
+#define jc_type_has_gyro(ctlr) \
+	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
+     ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCL || \
 	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
 
 static int __joycon_hid_send(struct hid_device *hdev, u8 *data, size_t len)
@@ -1335,8 +1355,8 @@ static void joycon_parse_report(struct joycon_ctlr *ctlr,
 		wake_up(&ctlr->wait);
 	}
 
-	/* parse IMU data if present */
-	if (rep->id == JC_INPUT_IMU_DATA)
+	/* parse IMU data if the controller has gyron and the data is present */
+	if (jc_type_has_gyro(ctlr) && rep->id == JC_INPUT_IMU_DATA)
 		joycon_parse_imu_report(ctlr, rep);
 }
 
@@ -1543,6 +1563,10 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 		name = "Nintendo Switch Pro Controller";
 		imu_name = "Nintendo Switch Pro Controller IMU";
 		break;
+    case USB_DEVICE_ID_NINTENDO_SNESCON:
+        name = "Nintendo Switch SNES Controller";
+        imu_name = "Nintendo Switch SNES Controller IMU";
+        break;
 	case USB_DEVICE_ID_NINTENDO_CHRGGRIP:
 		if (jc_type_has_left(ctlr)) {
 			name = "Nintendo Switch Left Joy-Con (Grip)";
@@ -1590,7 +1614,7 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 					     joycon_button_inputs_l[i]);
 
 		/* configure d-pad differently for joy-con vs pro controller */
-		if (hdev->product != USB_DEVICE_ID_NINTENDO_PROCON) {
+		if (jc_type_is_joycon(ctlr)) {
 			for (i = 0; joycon_dpad_inputs_jc[i] > 0; i++)
 				input_set_capability(ctlr->input, EV_KEY,
 						     joycon_dpad_inputs_jc[i]);
@@ -1820,7 +1844,7 @@ static int joycon_leds_create(struct joycon_ctlr *ctlr)
 	mutex_unlock(&joycon_input_num_mutex);
 
 	/* configure the home LED */
-	if (jc_type_has_right(ctlr)) {
+	if (jc_type_has_home(ctlr)) {
 		name = devm_kasprintf(dev, GFP_KERNEL, "%s:%s", d_name, "home");
 		if (!name)
 			return ret;
@@ -1964,6 +1988,7 @@ static int joycon_read_info(struct joycon_ctlr *ctlr)
 	if (!ctlr->mac_addr_str)
 		return -ENOMEM;
 	hid_info(ctlr->hdev, "controller MAC = %s\n", ctlr->mac_addr_str);
+    hid_info(ctlr->hdev, "controller type = %02X\n", report->subcmd_reply.data[2]);
 
 	/* Retrieve the type so we can distinguish for charging grip */
 	ctlr->ctlr_type = report->subcmd_reply.data[2];
@@ -2139,15 +2164,17 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 		hid_warn(hdev, "Analog stick positions may be inaccurate\n");
 	}
 
-	/* get IMU calibration data, and parse it */
-	ret = joycon_request_imu_calibration(ctlr);
-	if (ret) {
-		/*
-		 * We can function with default calibration, but it may be
-		 * inaccurate. Provide a warning, and continue on.
-		 */
-		hid_warn(hdev, "Unable to read IMU calibration data\n");
-	}
+    /* get IMU calibration data, and parse it */
+	if (jc_type_has_gyro(ctlr)) {
+        ret = joycon_request_imu_calibration(ctlr);
+        if (ret) {
+            /*
+             * We can function with default calibration, but it may be
+             * inaccurate. Provide a warning, and continue on.
+             */
+            hid_warn(hdev, "Unable to read IMU calibration data\n");
+        }
+    }
 
 	/* Set the reporting mode to 0x30, which is the full report mode */
 	ret = joycon_set_report_mode(ctlr);
@@ -2156,19 +2183,23 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 		goto err_mutex;
 	}
 
-	/* Enable rumble */
-	ret = joycon_enable_rumble(ctlr, true);
-	if (ret) {
-		hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
-		goto err_mutex;
-	}
+    /* Enable rumble if it supports it */
+	if (jc_type_has_rumble(ctlr)) {
+        ret = joycon_enable_rumble(ctlr, true);
+        if (ret) {
+            hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
+            goto err_mutex;
+        }
+    }
 
 	/* Enable the IMU */
-	ret = joycon_enable_imu(ctlr, true);
-	if (ret) {
-		hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
-		goto err_mutex;
-	}
+	if (jc_type_has_gyro(ctlr)) {
+        ret = joycon_enable_imu(ctlr, true);
+        if (ret) {
+            hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
+            goto err_mutex;
+        }
+    }
 
 	ret = joycon_read_info(ctlr);
 	if (ret) {
@@ -2244,6 +2275,8 @@ static const struct hid_device_id nintendo_hid_devices[] = {
 			 USB_DEVICE_ID_NINTENDO_CHRGGRIP) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
 			 USB_DEVICE_ID_NINTENDO_SNESCON) },
+    { HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_NINTENDO,
+             USB_DEVICE_ID_NINTENDO_SNESCON) },
 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_NINTENDO,
 			 USB_DEVICE_ID_NINTENDO_JOYCONL) },
 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_NINTENDO,
