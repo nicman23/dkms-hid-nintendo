@@ -493,7 +493,7 @@ struct joycon_ctlr {
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
 	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
 
-/* Does this controller have a home button? */
+/* Does this controller have rumble? */
 #define jc_type_has_rumble(ctlr) \
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
      ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCL || \
