@@ -493,12 +493,6 @@ struct joycon_ctlr {
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
 	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
 
-/* Does this controller have rumble? */
-#define jc_type_has_rumble(ctlr) \
-	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
-     ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCL || \
-	 ctlr->ctlr_type == JOYCON_CTLR_TYPE_PRO)
-
 /* Does this controller have gyro? */
 #define jc_type_has_gyro(ctlr) \
 	(ctlr->ctlr_type == JOYCON_CTLR_TYPE_JCR || \
@@ -2165,15 +2159,13 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	}
 
     /* get IMU calibration data, and parse it */
-	if (jc_type_has_gyro(ctlr)) {
-        ret = joycon_request_imu_calibration(ctlr);
-        if (ret) {
-            /*
-             * We can function with default calibration, but it may be
-             * inaccurate. Provide a warning, and continue on.
-             */
-            hid_warn(hdev, "Unable to read IMU calibration data\n");
-        }
+    ret = joycon_request_imu_calibration(ctlr);
+    if (ret) {
+        /*
+         * We can function with default calibration, but it may be
+         * inaccurate. Provide a warning, and continue on.
+         */
+        hid_warn(hdev, "Unable to read IMU calibration data\n");
     }
 
 	/* Set the reporting mode to 0x30, which is the full report mode */
@@ -2183,22 +2175,18 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 		goto err_mutex;
 	}
 
-    /* Enable rumble if it supports it */
-	if (jc_type_has_rumble(ctlr)) {
-        ret = joycon_enable_rumble(ctlr, true);
-        if (ret) {
-            hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
-            goto err_mutex;
-        }
+    /* Enable rumble */
+    ret = joycon_enable_rumble(ctlr, true);
+    if (ret) {
+        hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
+        goto err_mutex;
     }
 
 	/* Enable the IMU */
-	if (jc_type_has_gyro(ctlr)) {
-        ret = joycon_enable_imu(ctlr, true);
-        if (ret) {
-            hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
-            goto err_mutex;
-        }
+    ret = joycon_enable_imu(ctlr, true);
+    if (ret) {
+        hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
+        goto err_mutex;
     }
 
 	ret = joycon_read_info(ctlr);
