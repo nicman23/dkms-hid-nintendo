@@ -2,6 +2,8 @@
 
 A Nintendo HID kernel module.
 
+For any questions or bug reports, please refer to [hid_nintendo](https://github.com/DanielOgorchock/linux).
+
 
 ## Installation
 
