@@ -1875,7 +1875,7 @@ static int joycon_leds_create(struct joycon_ctlr *ctlr)
 		/* Set the home LED to 0 as default state */
 		ret = joycon_home_led_brightness_set(led, 0);
 		if (ret) {
-			hid_err(hdev, "Failed to set home LED dflt; ret=%d\n",
+			hid_warn(hdev, "Failed to set home LED dflt; ret=%d\n",
 									ret);
 			return ret;
 		}
@@ -2218,8 +2218,8 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	/* Initialize the leds */
 	ret = joycon_leds_create(ctlr);
 	if (ret) {
-		hid_err(hdev, "Failed to create leds; ret=%d\n", ret);
-		goto err_close;
+		// some 3rd-party controllers do not have LEDs
+		hid_warn(hdev, "Failed to create leds; ret=%d\n", ret);
 	}
 
 	/* Initialize the battery power supply */
