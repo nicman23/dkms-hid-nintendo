@@ -403,6 +403,7 @@ struct joycon_input_report {
 static const u16 JC_RUMBLE_DFLT_LOW_FREQ = 160;
 static const u16 JC_RUMBLE_DFLT_HIGH_FREQ = 320;
 static const u16 JC_RUMBLE_PERIOD_MS = 50;
+static const unsigned short JC_RUMBLE_ZERO_AMP_PKT_CNT = 5;
 
 /* Each physical controller is associated with a joycon_ctlr struct */
 struct joycon_ctlr {
@@ -426,6 +427,7 @@ struct joycon_ctlr {
 	u8 usb_ack_match;
 	u8 subcmd_ack_match;
 	bool received_input_report;
+	unsigned int last_subcmd_sent_msecs;
 
 	/* factory calibration data */
 	struct joycon_stick_cal left_stick_cal_x;
@@ -458,7 +460,7 @@ struct joycon_ctlr {
 	u16 rumble_lh_freq;
 	u16 rumble_rl_freq;
 	u16 rumble_rh_freq;
-	bool rumble_zero_amp;
+	unsigned short rumble_zero_countdown;
 
 	/* imu */
 	struct input_dev *imu_input;
@@ -506,6 +508,50 @@ static int __joycon_hid_send(struct hid_device *hdev, u8 *data, size_t len)
 	return ret;
 }
 
+static void joycon_wait_for_input_report(struct joycon_ctlr *ctlr)
+{
+	int ret;
+
+	/*
+	 * If we are in the proper reporting mode, wait for an input
+	 * report prior to sending the subcommand. This improves
+	 * reliability considerably.
+	 */
+	if (ctlr->ctlr_state == JOYCON_CTLR_STATE_READ) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&ctlr->lock, flags);
+		ctlr->received_input_report = false;
+		spin_unlock_irqrestore(&ctlr->lock, flags);
+		ret = wait_event_timeout(ctlr->wait,
+					 ctlr->received_input_report,
+					 HZ / 4);
+		/* We will still proceed, even with a timeout here */
+		if (!ret)
+			hid_warn(ctlr->hdev,
+				 "timeout waiting for input report\n");
+	}
+}
+
+/*
+ * Sending subcommands and/or rumble data at too high a rate can cause bluetooth
+ * controller disconnections.
+ */
+static void joycon_enforce_subcmd_rate(struct joycon_ctlr *ctlr)
+{
+	static const unsigned int max_subcmd_rate_ms = 25;
+	unsigned int current_ms = jiffies_to_msecs(jiffies);
+	unsigned int delta_ms = current_ms - ctlr->last_subcmd_sent_msecs;
+
+	while (delta_ms < max_subcmd_rate_ms &&
+	       ctlr->ctlr_state == JOYCON_CTLR_STATE_READ) {
+		joycon_wait_for_input_report(ctlr);
+		current_ms = jiffies_to_msecs(jiffies);
+		delta_ms = current_ms - ctlr->last_subcmd_sent_msecs;
+	}
+	ctlr->last_subcmd_sent_msecs = current_ms;
+}
+
 static int joycon_hid_send_sync(struct joycon_ctlr *ctlr, u8 *data, size_t len,
 				u32 timeout)
 {
@@ -517,25 +563,7 @@ static int joycon_hid_send_sync(struct joycon_ctlr *ctlr, u8 *data, size_t len,
 	 * doing one retry after a timeout appears to always work.
 	 */
 	while (tries--) {
-		/*
-		 * If we are in the proper reporting mode, wait for an input
-		 * report prior to sending the subcommand. This improves
-		 * reliability considerably.
-		 */
-		if (ctlr->ctlr_state == JOYCON_CTLR_STATE_READ) {
-			unsigned long flags;
-
-			spin_lock_irqsave(&ctlr->lock, flags);
-			ctlr->received_input_report = false;
-			spin_unlock_irqrestore(&ctlr->lock, flags);
-			ret = wait_event_timeout(ctlr->wait,
-						 ctlr->received_input_report,
-						 HZ / 4);
-			/* We will still proceed, even with a timeout here */
-			if (!ret)
-				hid_warn(ctlr->hdev,
-					 "timeout waiting for input report\n");
-		}
+		joycon_enforce_subcmd_rate(ctlr);
 
 		ret = __joycon_hid_send(ctlr->hdev, data, len);
 		if (ret < 0) {
@@ -1203,8 +1231,17 @@ static void joycon_parse_report(struct joycon_ctlr *ctlr,
 	if (IS_ENABLED(CONFIG_NINTENDO_FF) && rep->vibrator_report &&
 	    (msecs - ctlr->rumble_msecs) >= JC_RUMBLE_PERIOD_MS &&
 	    (ctlr->rumble_queue_head != ctlr->rumble_queue_tail ||
-	     !ctlr->rumble_zero_amp))
+	     ctlr->rumble_zero_countdown > 0)) {
+		/*
+		 * When this value reaches 0, we know we've sent multiple
+		 * packets to the controller instructing it to disable rumble.
+		 * We can safely stop sending periodic rumble packets until the
+		 * next ff effect.
+		 */
+		if (ctlr->rumble_zero_countdown > 0)
+			ctlr->rumble_zero_countdown--;
 		queue_work(ctlr->rumble_queue, &ctlr->rumble_worker);
+	}
 
 	/* Parse the battery status */
 	tmp = rep->bat_con;
@@ -1371,6 +1408,8 @@ static int joycon_send_rumble_data(struct joycon_ctlr *ctlr)
 	if (++ctlr->subcmd_num > 0xF)
 		ctlr->subcmd_num = 0;
 
+	joycon_enforce_subcmd_rate(ctlr);
+
 	ret = __joycon_hid_send(ctlr->hdev, (u8 *)&rumble_output,
 				sizeof(rumble_output));
 	return ret;
@@ -1496,8 +1535,9 @@ static int joycon_set_rumble(struct joycon_ctlr *ctlr, u16 amp_r, u16 amp_l,
 	freq_r_high = ctlr->rumble_rh_freq;
 	freq_l_low = ctlr->rumble_ll_freq;
 	freq_l_high = ctlr->rumble_lh_freq;
-	/* this flag is used to reduce subcommand traffic */
-	ctlr->rumble_zero_amp = (amp_l == 0) && (amp_r == 0);
+	/* limit number of silent rumble packets to reduce traffic */
+	if (amp_l != 0 || amp_r != 0)
+		ctlr->rumble_zero_countdown = JC_RUMBLE_ZERO_AMP_PKT_CNT;
 	spin_unlock_irqrestore(&ctlr->lock, flags);
 
 	/* right joy-con */
