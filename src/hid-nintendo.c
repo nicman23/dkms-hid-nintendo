@@ -181,7 +181,8 @@ static const u16 JC_IMU_GYRO_FLAT		/*= 0*/;
 static int ignore_init_failure = 0;
 module_param(ignore_init_failure, uint, 0644);
 MODULE_PARM_DESC(ignore_init_failure, "Ignore init failure during controller setup."
-		"Allows thirdparty controllers to likely work"
+		"Possibly allows thirdparty controllers to work but no guarantees."
+		"Could also result in the Controller locking up or a crash."
 		"([0] = disabled, 1 = enabled)");
 
 /* frequency/amplitude tables for rumble */
