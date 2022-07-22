@@ -178,6 +178,13 @@ static const u16 JC_IMU_GYRO_RES_PER_DPS	= 14247; /* (14.247*1000) */
 static const u16 JC_IMU_GYRO_FUZZ		= 10;
 static const u16 JC_IMU_GYRO_FLAT		/*= 0*/;
 
+static int ignore_init_failure = 0;
+module_param(ignore_init_failure, uint, 0644);
+MODULE_PARM_DESC(ignore_init_failure, "Ignore init failure during controller setup."
+		"Possibly allows thirdparty controllers to work but no guarantees."
+		"Could also result in the Controller locking up or a crash."
+		"([0] = disabled, 1 = enabled)");
+
 /* frequency/amplitude tables for rumble */
 struct joycon_rumble_freq_data {
 	u16 high;
@@ -2232,29 +2239,50 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	/* Set the reporting mode to 0x30, which is the full report mode */
 	ret = joycon_set_report_mode(ctlr);
 	if (ret) {
-		hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
-		goto err_mutex;
+		if (ignore_init_failure < 1) {
+			hid_err(hdev, "Failed to set report mode; ret=%d\n", ret);
+			goto err_mutex;
+		} else {
+			hid_warn(hdev, "Failed to set report mode, ignoring; ret=%d\n",
+				ret);
+		}
 	}
 
 	/* Enable rumble */
 	ret = joycon_enable_rumble(ctlr, true);
 	if (ret) {
-		hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
-		goto err_mutex;
+		if (ignore_init_failure < 1) {
+			hid_err(hdev, "Failed to enable rumble; ret=%d\n", ret);
+			goto err_mutex;
+		} else {
+			hid_warn(hdev, "Failed to enable rumble, ignoring; ret=%d\n",
+				ret);
+		}
 	}
 
 	/* Enable the IMU */
 	ret = joycon_enable_imu(ctlr, true);
 	if (ret) {
-		hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
-		goto err_mutex;
+		if (ignore_init_failure < 1) {
+			hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
+			goto err_mutex;
+		} else {
+			hid_warn(hdev, "Failed to enable the IMU, ignoring; ret=%d\n",
+				ret);
+		}
 	}
 
 	ret = joycon_read_info(ctlr);
 	if (ret) {
-		hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
+		if (ignore_init_failure < 1) {
+			hid_err(hdev, "Failed to retrieve controller info; ret=%d\n",
 			ret);
-		goto err_close;
+			goto err_close;
+		} else {
+			hid_warn(hdev, 
+				"Failed to retrieve controller info, ignoring; ret=%d\n", 
+				ret);
+		}
 	}
 
 	mutex_unlock(&ctlr->output_mutex);
@@ -2269,8 +2297,14 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	/* Initialize the battery power supply */
 	ret = joycon_power_supply_create(ctlr);
 	if (ret) {
-		hid_err(hdev, "Failed to create power_supply; ret=%d\n", ret);
-		goto err_close;
+		if (ignore_init_failure < 1) {
+			hid_err(hdev, "Failed to create power_supply; ret=%d\n", ret);
+			goto err_close;
+		} else {
+			hid_warn(hdev,
+				"Failed to create power_supply, ignoring; ret=%d\n",
+				ret);
+		}
 	}
 
 	ret = joycon_input_create(ctlr);
@@ -2342,4 +2376,3 @@ module_hid_driver(nintendo_hid_driver);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Daniel J. Ogorchock <djogorchock@gmail.com>");
 MODULE_DESCRIPTION("Driver for Nintendo Switch Controllers");
-
